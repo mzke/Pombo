@@ -20,7 +20,7 @@ Utiliza o driver oficial [MongoDB.Driver para .NET](https://www.nuget.org/packag
 Clone o repositório e importe o módulo:
 
 ```powershell
-git clone https://github.com/seu-usuario/Pombo.git
+git clone https://github.com/mzke/Pombo.git
 Import-Module .\Pombo\src\Pombo\Pombo.psd1
 ```
 

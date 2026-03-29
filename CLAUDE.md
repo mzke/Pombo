@@ -67,8 +67,32 @@ $pessoaID | Remove-Pombo -Collection pessoas
 
 ### Get-Pombo
 
-Obtem uma lista de documento do MongoDB como lista de `PSCustomObject`. 
+Obtem uma lista de documento do MongoDB como lista de `PSCustomObject`.
 
 ```
 $pessoas = Get-Pombo -Collection pessoas
 ```
+
+Use `-ID` para buscar um único documento pelo ObjectId:
+
+```
+$pessoa = Get-Pombo -Collection pessoas -ID "507f1f77bcf86cd799439011"
+```
+
+Use `-Filter` com expressões PowerShell para filtrar **server-side** no MongoDB. O ScriptBlock é parseado via AST e traduzido para filtro MongoDB — nenhum documento é trazido para memória antes do filtro.
+
+```
+Get-Pombo -Collection pessoas -Filter { $_.Cidade -eq "Blumenau" }
+Get-Pombo -Collection pessoas -Filter { $_.Idade -gt 25 -and $_.Ativo -eq $true }
+Get-Pombo -Collection pessoas -Filter { $_.Nome -like "Rich*" }
+Get-Pombo -Collection pessoas -Filter { $_.Cidade -in @("Blumenau", "Joinville") }
+Get-Pombo -Collection pedidos -Filter { $_.ClienteId -eq "507f1f77bcf86cd799439011" }
+```
+
+Operadores suportados: `-eq`, `-ne`, `-gt`, `-ge`, `-lt`, `-le`, `-like`, `-notlike`, `-match`, `-notmatch`, `-in`, `-notin`, `-and`, `-or`.
+
+Restrições do `-Filter`:
+- Lado esquerdo deve ser sempre `$_.Campo` (ou `$_.Campo.SubCampo` para aninhados)
+- Valores devem ser literais (`"string"`, `42`, `$true`, `$false`, `$null`, `@(...)`)
+- Variáveis externas não são suportadas
+- `-ID` e `-Filter` são mutuamente exclusivos

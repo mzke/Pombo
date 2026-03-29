@@ -192,6 +192,113 @@ Describe 'ConvertFrom-BsonDocument' -Tag 'Unit' {
 }
 
 # ---------------------------------------------------------------------------
+# ConvertTo-MongoFilter
+# ---------------------------------------------------------------------------
+Describe 'ConvertTo-MongoFilter' -Tag 'Unit' {
+    InModuleScope 'Pombo' {
+
+        It 'gera filtro de igualdade de string' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Cidade -eq 'Blumenau' }
+            $f['Cidade']['$eq'].AsString | Should -Be 'Blumenau'
+        }
+
+        It 'gera filtro de igualdade de inteiro' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Idade -eq 30 }
+            $f['Idade']['$eq'].AsInt32 | Should -Be 30
+        }
+
+        It 'gera filtro maior-que' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Idade -gt 18 }
+            $f['Idade']['$gt'].AsInt32 | Should -Be 18
+        }
+
+        It 'gera filtro menor-ou-igual' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Preco -le 99.9 }
+            $f['Preco']['$lte'].AsDouble | Should -Be 99.9
+        }
+
+        It 'gera filtro diferente' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Ativo -ne $false }
+            $f['Ativo']['$ne'].AsBoolean | Should -BeFalse
+        }
+
+        It 'gera filtro booleano com $true' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Ativo -eq $true }
+            $f['Ativo']['$eq'].AsBoolean | Should -BeTrue
+        }
+
+        It 'gera filtro AND' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Idade -gt 18 -and $_.Cidade -eq 'Blumenau' }
+            $f['$and']          | Should -Not -BeNullOrEmpty
+            $f['$and'].Count    | Should -Be 2
+            $f['$and'][0]['Idade']['$gt'].AsInt32  | Should -Be 18
+            $f['$and'][1]['Cidade']['$eq'].AsString | Should -Be 'Blumenau'
+        }
+
+        It 'gera filtro OR' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Cargo -eq 'Admin' -or $_.Cargo -eq 'Super' }
+            $f['$or']       | Should -Not -BeNullOrEmpty
+            $f['$or'].Count | Should -Be 2
+        }
+
+        It 'gera filtro -like convertendo wildcard para regex' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Nome -like 'Rich*' }
+            $f['Nome']['$regex'].AsString | Should -Be '^Rich.*$'
+        }
+
+        It 'gera filtro -notlike com $not' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Nome -notlike 'Admin*' }
+            $f['Nome']['$not']['$regex'].AsString | Should -Be '^Admin.*$'
+        }
+
+        It 'gera filtro -match com regex literal' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Email -match '@empresa\.com$' }
+            $f['Email']['$regex'].AsString | Should -Be '@empresa\.com$'
+        }
+
+        It 'gera filtro -in com array' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Cidade -in @('Blumenau', 'Joinville') }
+            $f['Cidade']['$in'].Count        | Should -Be 2
+            $f['Cidade']['$in'][0].AsString  | Should -Be 'Blumenau'
+            $f['Cidade']['$in'][1].AsString  | Should -Be 'Joinville'
+        }
+
+        It 'gera filtro -notin' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Status -notin @('cancelado', 'expirado') }
+            $f['Status']['$nin'].Count | Should -Be 2
+        }
+
+        It 'mapeia campo ID para _id' {
+            $id = '507f1f77bcf86cd799439011'
+            $f  = ConvertTo-MongoFilter -Filter { $_.ID -eq '507f1f77bcf86cd799439011' }
+            $f.Contains('_id')              | Should -BeTrue
+            $f['_id']['$eq'].BsonType.ToString() | Should -Be 'ObjectId'
+            $f['_id']['$eq'].AsObjectId.ToString() | Should -Be $id
+        }
+
+        It 'converte campo com sufixo Id para ObjectId' {
+            $id = '507f1f77bcf86cd799439011'
+            $f  = ConvertTo-MongoFilter -Filter { $_.ClienteId -eq '507f1f77bcf86cd799439011' }
+            $f['ClienteId']['$eq'].BsonType.ToString()    | Should -Be 'ObjectId'
+            $f['ClienteId']['$eq'].AsObjectId.ToString()  | Should -Be $id
+        }
+
+        It 'gera filtro com propriedade aninhada' {
+            $f = ConvertTo-MongoFilter -Filter { $_.Endereco.Cidade -eq 'Blumenau' }
+            $f['Endereco.Cidade']['$eq'].AsString | Should -Be 'Blumenau'
+        }
+
+        It 'lanca erro quando lado esquerdo nao e propriedade de $_' {
+            { ConvertTo-MongoFilter -Filter { 'valor' -eq $_.Campo } } | Should -Throw
+        }
+
+        It 'lanca erro quando valor e uma variavel externa' {
+            { ConvertTo-MongoFilter -Filter { $_.Nome -eq $minhaVar } } | Should -Throw "*Variaveis externas*"
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Validacao de entrada (sem conexao MongoDB)
 # ---------------------------------------------------------------------------
 Describe 'Set-Pombo — validacao' -Tag 'Unit' {
@@ -335,6 +442,29 @@ Describe 'Integracao CRUD' -Tag 'Integration' -Skip:(-not $env:POMBO) {
 
         # Limpa
         $result | Remove-Pombo -Collection $script:TestCol
+    }
+
+    It 'Get-Pombo -Filter retorna apenas documentos correspondentes' {
+        $a = [PSCustomObject]@{ Nome = 'FiltroA'; Valor = 10; Ativo = $true  } | New-Pombo -Collection $script:TestCol
+        $b = [PSCustomObject]@{ Nome = 'FiltroB'; Valor = 50; Ativo = $false } | New-Pombo -Collection $script:TestCol
+        $c = [PSCustomObject]@{ Nome = 'FiltroC'; Valor = 90; Ativo = $true  } | New-Pombo -Collection $script:TestCol
+
+        $result = Get-Pombo -Collection $script:TestCol -Filter { $_.Valor -gt 20 }
+        $result | Where-Object { $_.Nome -eq 'FiltroA' } | Should -BeNullOrEmpty
+        $result | Where-Object { $_.Nome -eq 'FiltroB' } | Should -Not -BeNullOrEmpty
+        $result | Where-Object { $_.Nome -eq 'FiltroC' } | Should -Not -BeNullOrEmpty
+
+        $result2 = Get-Pombo -Collection $script:TestCol -Filter { $_.Ativo -eq $true -and $_.Valor -gt 20 }
+        $result2 | Where-Object { $_.Nome -eq 'FiltroA' } | Should -BeNullOrEmpty
+        $result2 | Where-Object { $_.Nome -eq 'FiltroB' } | Should -BeNullOrEmpty
+        $result2 | Where-Object { $_.Nome -eq 'FiltroC' } | Should -Not -BeNullOrEmpty
+
+        $result3 = Get-Pombo -Collection $script:TestCol -Filter { $_.Nome -like 'Filtro*' }
+        ($result3 | Measure-Object).Count | Should -BeGreaterOrEqual 3
+
+        $a | Remove-Pombo -Collection $script:TestCol
+        $b | Remove-Pombo -Collection $script:TestCol
+        $c | Remove-Pombo -Collection $script:TestCol
     }
 
     It 'New-Pombo preserva ClienteId como ObjectId (roundtrip)' {

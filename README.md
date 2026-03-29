@@ -71,11 +71,39 @@ Use o parâmetro `-ID` para buscar um único documento pelo seu ObjectId:
 $pessoa = Get-Pombo -Collection pessoas -ID "507f1f77bcf86cd799439011"
 ```
 
-Use `Where-Object` para filtrar via pipeline:
+Use o parâmetro `-Filter` para filtrar **no servidor** com expressões PowerShell:
 
 ```powershell
-Get-Pombo -Collection pessoas | Where-Object { $_.Cidade -eq "Blumenau" }
-Get-Pombo -Collection pessoas | Where-Object { $_.Idade -gt 25 } | Sort-Object Nome
+# Igualdade
+Get-Pombo -Collection pessoas -Filter { $_.Cidade -eq "Blumenau" }
+
+# Comparação numérica
+Get-Pombo -Collection pessoas -Filter { $_.Idade -gt 25 }
+
+# AND / OR composto
+Get-Pombo -Collection pessoas -Filter { $_.Idade -ge 18 -and $_.Ativo -eq $true }
+Get-Pombo -Collection pessoas -Filter { $_.Cargo -eq "Admin" -or $_.Cargo -eq "Super" }
+
+# Wildcard (-like converte * e ? para regex com âncoras)
+Get-Pombo -Collection pessoas -Filter { $_.Nome -like "Rich*" }
+
+# Regex literal
+Get-Pombo -Collection pessoas -Filter { $_.Email -match "@empresa\.com$" }
+
+# Lista de valores
+Get-Pombo -Collection pessoas -Filter { $_.Cidade -in @("Blumenau", "Joinville") }
+
+# Propriedade aninhada
+Get-Pombo -Collection pessoas -Filter { $_.Endereco.Estado -eq "SC" }
+
+# Chave estrangeira (ObjectId detectado automaticamente pelo sufixo Id)
+Get-Pombo -Collection pedidos -Filter { $_.ClienteId -eq "507f1f77bcf86cd799439011" }
+```
+
+> **Nota:** `-Filter` executa o filtro no MongoDB (server-side). Para ordenação ou transformações pós-filtro, combine com o pipeline normalmente:
+
+```powershell
+Get-Pombo -Collection pessoas -Filter { $_.Idade -gt 25 } | Sort-Object Nome
 ```
 
 ### `Set-Pombo` — Atualizar documento
@@ -109,6 +137,7 @@ $pessoa | Remove-Pombo -Collection pessoas
 | Sufixo `ID`, `Id` ou `id` em qualquer propriedade | Tratado como `ObjectId` (ex: `ClienteId`) |
 | Documentos aninhados | Convertidos recursivamente para `PSCustomObject` |
 | Arrays | Convertidos para arrays do PowerShell |
+| `-Filter { $_.Campo -op valor }` | Filtro executado no MongoDB (server-side); suporta `-eq`, `-ne`, `-gt`, `-ge`, `-lt`, `-le`, `-like`, `-notlike`, `-match`, `-notmatch`, `-in`, `-notin`, `-and`, `-or` |
 
 ---
 
@@ -154,8 +183,8 @@ Invoke-Pester ./tests/Pombo.Tests.ps1
 $doc = [PSCustomObject]@{ Nome = "Ana"; Ativo = $true }
 $doc = $doc | New-Pombo -Collection usuarios
 
-# Buscar e filtrar
-Get-Pombo -Collection usuarios | Where-Object { $_.Ativo }
+# Buscar e filtrar (server-side)
+Get-Pombo -Collection usuarios -Filter { $_.Ativo -eq $true }
 
 # Atualizar
 $doc.Ativo = $false

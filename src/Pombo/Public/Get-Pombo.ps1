@@ -1,19 +1,25 @@
 function Get-Pombo {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'All')]
     param(
         [Parameter(Mandatory)]
         [string]$Collection,
 
-        [Parameter()]
-        [string]$ID
+        [Parameter(ParameterSetName = 'ById')]
+        [string]$ID,
+
+        [Parameter(ParameterSetName = 'ByFilter')]
+        [ScriptBlock]$Filter
     )
 
     $col = Get-PomboCollection -Collection $Collection
 
-    if ($ID) {
-        $oid    = [MongoDB.Bson.ObjectId]::Parse($ID)
-        $filter = [MongoDB.Bson.BsonDocument]::new('_id', [MongoDB.Bson.BsonObjectId]::new($oid))
-        $cursor = [PomboHelper]::FindById($col, $filter)
+    if ($PSCmdlet.ParameterSetName -eq 'ById') {
+        $oid       = [MongoDB.Bson.ObjectId]::Parse($ID)
+        $filterDoc = [MongoDB.Bson.BsonDocument]::new('_id', [MongoDB.Bson.BsonObjectId]::new($oid))
+        $cursor    = [PomboHelper]::FindById($col, $filterDoc)
+    } elseif ($PSCmdlet.ParameterSetName -eq 'ByFilter') {
+        $filterDoc = ConvertTo-MongoFilter -Filter $Filter
+        $cursor    = [PomboHelper]::FindById($col, $filterDoc)
     } else {
         $cursor = [PomboHelper]::FindAll($col)
     }
